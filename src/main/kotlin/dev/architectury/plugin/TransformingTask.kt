@@ -1,5 +1,6 @@
 package dev.architectury.plugin
 
+import dev.architectury.plugin.loom.LoomInterface
 import dev.architectury.plugin.utils.GradleSupport
 import dev.architectury.transformer.Transform
 import dev.architectury.transformer.Transformer
@@ -10,6 +11,7 @@ import dev.architectury.transformer.shadowed.impl.org.objectweb.asm.ClassWriter
 import dev.architectury.transformer.shadowed.impl.org.objectweb.asm.Opcodes
 import dev.architectury.transformer.shadowed.impl.org.objectweb.asm.tree.ClassNode
 import dev.architectury.transformer.transformers.BuiltinProperties
+import dev.architectury.transformer.transformers.RemapMixinVariables
 import dev.architectury.transformer.transformers.base.ClassEditTransformer
 import dev.architectury.transformer.util.Logger
 import org.gradle.api.Project
@@ -30,7 +32,11 @@ import java.util.*
 import java.util.function.BiConsumer
 import kotlin.properties.Delegates
 
-open class TransformingTask : Jar() {
+abstract class TransformingTask : Jar() {
+    // Note: Gradle 9.x requires these abstract members to be implemented by subclasses
+    // They are handled by Gradle's service injection mechanism at runtime
+    // We don't declare them here as that causes conflicts with the parent class
+
     @InputFile
     val input: RegularFileProperty = GradleSupport.getFileProperty(project)
 
@@ -45,6 +51,9 @@ open class TransformingTask : Jar() {
         @Internal
         get() = platformProperty.orNull
         set(value) = platformProperty.set(value)
+
+    @Input
+    var remap: Boolean = true
 
     @Input
     protected val platformProperty: Property<String> = project.objects.property(String::class.java)
@@ -77,7 +86,15 @@ open class TransformingTask : Jar() {
         Logger.debug("Transforming from $input to $output")
         Logger.debug("============================")
         Logger.debug("")
-        Transform.runTransformers(input, output, transformers.get())
+
+        // If it's a remapping transformer and remap is false we should skip it.
+        // Remapping transformers are only RemapMixinVariables currently
+        val filteredTransformers = transformers.get().filterNot {
+            val skipped = !remap && it is RemapMixinVariables
+            if (skipped) Logger.debug("Skipping transformer ${it.javaClass.name} because remapping is disabled")
+            skipped
+        }
+        Transform.runTransformers(input, output, filteredTransformers)
 
         if (postTransformers.get().isNotEmpty()) {
             val postTransformers = postTransformers.get()

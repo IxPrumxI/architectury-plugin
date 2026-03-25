@@ -100,7 +100,6 @@ open class ArchitectPluginExtension(val project: Project) {
 
     fun properties(platform: String): Map<String, String> {
         val map = mutableMapOf(
-            BuiltinProperties.MIXIN_MAPPINGS to loom.allMixinMappings.joinToString(File.pathSeparator),
             BuiltinProperties.INJECT_INJECTABLES to injectInjectables.toString(),
             BuiltinProperties.UNIQUE_IDENTIFIER to project.projectUniqueIdentifier(),
             BuiltinProperties.COMPILE_CLASSPATH to getCompileClasspath().joinToString(File.pathSeparator),
@@ -116,6 +115,10 @@ open class ArchitectPluginExtension(val project: Project) {
             }
 
             map[BuiltinProperties.MAPPINGS_WITH_SRG] = loom.tinyMappingsWithSrg.toString()
+        }
+
+        if (!loom.disableObfuscation) {
+            map[BuiltinProperties.MIXIN_MAPPINGS] = loom.allMixinMappings.joinToString(File.pathSeparator)
         }
 
         return map
@@ -165,7 +168,7 @@ open class ArchitectPluginExtension(val project: Project) {
 
     fun transform(name: String, action: Action<Transform>) {
         transforms.getOrPut(name) {
-            Transform(project, name, "development" + (if (name == "neoforge") "NeoForge" else name.capitalize())).also { transform ->
+            Transform(project, name, "development" + (if (name == "neoforge") "NeoForge" else name.replaceFirstChar { it.uppercase() }), !loom.disableObfuscation).also { transform ->
                 if (!compileOnly) {
                     project.configurations.maybeCreate(transform.devConfigName)
 
@@ -439,10 +442,14 @@ open class ArchitectPluginExtension(val project: Project) {
                     buildTask.dependsOn(it)
                 }
 
+            if (loom.disableObfuscation) {
+                transformProductionTask.get().remap = false
+                loom.addNestedJars(transformProductionTask.get())
+            }
             transformProductionTask.get().archiveFile.get().asFile.takeUnless { it.exists() }?.createEmptyJar()
         }
 
-        val remapJarTask = project.tasks.getByName("remapJar") {
+        val remapJarTask = project.tasks.findByName("remapJar")?.let {
             it as Jar
 
             it.archiveClassifier.set("")
@@ -493,6 +500,7 @@ data class Transform(
     val project: Project,
     val name: String,
     val devConfigName: String,
+    var remap: Boolean = true,
     val transformers: MutableList<Function<Path, TransformerPair>> = mutableListOf(),
     var envAnnotationProvider: String = "net.fabricmc:fabric-loader:+",
     var platformPackage: String? = null,

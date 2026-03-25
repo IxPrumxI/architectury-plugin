@@ -2,7 +2,6 @@ package dev.architectury.plugin
 
 import dev.architectury.plugin.loom.LoomInterface
 import dev.architectury.plugin.transformers.AddRefmapName
-import dev.architectury.transformer.Transformer
 import dev.architectury.transformer.shadowed.impl.com.google.gson.Gson
 import dev.architectury.transformer.transformers.*
 import dev.architectury.transformer.transformers.base.ClassEditTransformer
@@ -17,7 +16,7 @@ open class ModLoader(
         LOADERS[id] = this
     }
 
-    open val titledId = id.capitalize()
+    open val titledId = id.replaceFirstChar { it.uppercase() }
 
     companion object {
         fun valueOf(id: String): ModLoader =
